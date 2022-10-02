@@ -6,11 +6,11 @@ use std::io::SeekFrom;
 use std::io::{BufReader, BufWriter};
 use std::path::Path;
 
-type PageNum = u64;
-type ByteString = Vec<u8>;
+pub type PageNum = u64;
+pub type ByteString = Vec<u8>;
 
 const META_PAGE_NUM: PageNum = 0;
-const PAGE_NUM_SIZE: usize = 8; // page number size in bytes
+pub const PAGE_NUM_SIZE: usize = 8; // page number size in bytes
 
 #[derive(Clone)]
 pub struct Meta {
