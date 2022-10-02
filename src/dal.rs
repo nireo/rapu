@@ -1,10 +1,10 @@
+use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use std::fs::{File, OpenOptions};
 use std::io::prelude::*;
+use std::io::Cursor;
 use std::io::SeekFrom;
 use std::io::{BufReader, BufWriter};
 use std::path::Path;
-use byteorder::{LittleEndian, WriteBytesExt, ReadBytesExt};
-use std::io::Cursor;
 
 type PageNum = u64;
 type ByteString = Vec<u8>;
@@ -12,8 +12,9 @@ type ByteString = Vec<u8>;
 const META_PAGE_NUM: PageNum = 0;
 const PAGE_NUM_SIZE: usize = 8; // page number size in bytes
 
-struct Meta {
-    freelist_page: PageNum,
+#[derive(Clone)]
+pub struct Meta {
+    pub freelist_page: PageNum,
 }
 
 impl Meta {
@@ -60,42 +61,88 @@ impl Freelist {
     pub fn release_page(&mut self, page: PageNum) {
         self.released_pages.push(page)
     }
+
+    pub fn serialize(&self) -> std::io::Result<Vec<u8>> {
+        let mut data = Vec::new();
+        data.write_u16::<LittleEndian>(self.max_page as u16)?;
+        data.write_u16::<LittleEndian>(self.released_pages.len() as u16)?;
+
+        for page in self.released_pages.iter() {
+            data.write_u64::<LittleEndian>(*page)?;
+        }
+
+        Ok(data)
+    }
+
+    pub fn deserialize(&mut self, buf: &[u8]) -> std::io::Result<()> {
+        let mut rdr = Cursor::new(buf);
+        self.max_page = rdr.read_u16::<LittleEndian>()? as u64;
+        let page_count = rdr.read_u16::<LittleEndian>()?;
+
+        for _ in 0..page_count {
+            self.released_pages.push(rdr.read_u64::<LittleEndian>()?);
+        }
+
+        Ok(())
+    }
 }
 
-struct Page {
-    num: PageNum,
-    data: ByteString,
+pub struct Page {
+    pub num: PageNum,
+    pub data: ByteString,
 }
 
-struct DataAccessLayer {
-    file: File,
-    page_size: usize,
-    freelist: Freelist,
+pub struct DataAccessLayer {
+    pub file: File,
+    pub page_size: usize,
+    pub freelist: Freelist,
+    pub meta: Meta,
 }
 
 impl DataAccessLayer {
     pub fn new(path: &Path, page_size: usize) -> std::io::Result<Self> {
-        let file = OpenOptions::new()
-            .read(true)
-            .write(true)
-            .create(true)
-            .open(path)?;
+        if path.exists() {
+            let file = OpenOptions::new().read(true).write(true).open(path)?;
 
-        Ok(Self {
-            file,
-            page_size,
-            freelist: Freelist::new(),
-        })
+            let mut dal = Self {
+                file,
+                page_size,
+                freelist: Freelist::new(),
+                meta: Meta::new(),
+            };
+            dal.meta = dal.read_meta()?;
+            dal.freelist = dal.read_freelist()?;
+
+            Ok(dal)
+        } else {
+            let file = OpenOptions::new()
+                .read(true)
+                .write(true)
+                .create(true)
+                .open(path)?;
+
+            let mut dal = Self {
+                file,
+                page_size,
+                freelist: Freelist::new(),
+                meta: Meta::new(),
+            };
+            dal.meta.freelist_page = dal.freelist.next_page();
+            let meta_clone = dal.meta.clone();
+            dal.write_meta(&meta_clone)?;
+
+            Ok(dal)
+        }
     }
 
-    fn allocate_empty_page(&self) -> Page {
+    pub fn allocate_empty_page(&self) -> Page {
         Page {
             data: ByteString::with_capacity(self.page_size),
             num: 0,
         }
     }
 
-    fn read_page(&mut self, page_num: PageNum) -> std::io::Result<Page> {
+    pub fn read_page(&mut self, page_num: PageNum) -> std::io::Result<Page> {
         let mut p = self.allocate_empty_page();
         let offset = (page_num as usize) * self.page_size;
 
@@ -107,7 +154,7 @@ impl DataAccessLayer {
         Ok(p)
     }
 
-    fn write_page(&mut self, p: &Page) -> std::io::Result<()> {
+    pub fn write_page(&mut self, p: &Page) -> std::io::Result<()> {
         let offset = (p.num as usize) * self.page_size;
         let mut f = BufWriter::new(&mut self.file);
         f.seek(SeekFrom::Start(offset as u64))?;
@@ -116,7 +163,7 @@ impl DataAccessLayer {
         Ok(())
     }
 
-    fn write_meta(&mut self, meta: &Meta) -> std::io::Result<Page> {
+    pub fn write_meta(&mut self, meta: &Meta) -> std::io::Result<Page> {
         let mut meta_bytes: Vec<u8> = Vec::new();
         meta.serialize(&mut meta_bytes)?;
 
@@ -129,11 +176,33 @@ impl DataAccessLayer {
         Ok(pg)
     }
 
-    fn read_meta(&mut self) -> std::io::Result<Meta> {
+    pub fn read_meta(&mut self) -> std::io::Result<Meta> {
         let pg = self.read_page(META_PAGE_NUM)?;
         let mut meta = Meta::new();
         meta.deserialize(&pg.data)?;
 
         Ok(meta)
+    }
+
+    pub fn write_freelist(&mut self) -> std::io::Result<Page> {
+        let mut pg = self.allocate_empty_page();
+        pg.num = self.meta.freelist_page;
+        let buf = self.freelist.serialize()?;
+
+        for i in 0..buf.len() {
+            pg.data[i] = buf[i].clone();
+        }
+        self.write_page(&pg)?;
+        self.meta.freelist_page = pg.num;
+
+        Ok(pg)
+    }
+
+    pub fn read_freelist(&mut self) -> std::io::Result<Freelist> {
+        let pg = self.read_page(self.meta.freelist_page)?;
+        let mut freelist = Freelist::new();
+        freelist.deserialize(&pg.data)?;
+
+        Ok(freelist)
     }
 }
