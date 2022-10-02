@@ -22,8 +22,11 @@ impl Meta {
         Self { freelist_page: 0 }
     }
 
-    pub fn serialize(&self, vc: &mut Vec<u8>) -> std::io::Result<()> {
-        vc.write_u64::<LittleEndian>(self.freelist_page)
+    pub fn serialize(&self) -> std::io::Result<Vec<u8>> {
+        let mut vc = Vec::new();
+        vc.write_u64::<LittleEndian>(self.freelist_page)?;
+
+        Ok(vc)
     }
 
     pub fn deserialize(&mut self, vc: &[u8]) -> std::io::Result<()> {
@@ -137,7 +140,7 @@ impl DataAccessLayer {
 
     pub fn allocate_empty_page(&self) -> Page {
         Page {
-            data: ByteString::with_capacity(self.page_size),
+            data: vec![0; self.page_size],
             num: 0,
         }
     }
@@ -164,8 +167,7 @@ impl DataAccessLayer {
     }
 
     pub fn write_meta(&mut self, meta: &Meta) -> std::io::Result<Page> {
-        let mut meta_bytes: Vec<u8> = Vec::new();
-        meta.serialize(&mut meta_bytes)?;
+        let meta_bytes = meta.serialize()?;
 
         let mut pg = self.allocate_empty_page();
         for i in 0..meta_bytes.len() {
