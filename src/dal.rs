@@ -1,3 +1,4 @@
+use crate::node::Node;
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use std::fs::{File, OpenOptions};
 use std::io::prelude::*;
@@ -207,5 +208,33 @@ impl DataAccessLayer {
         freelist.deserialize(&pg.data)?;
 
         Ok(freelist)
+    }
+
+    pub fn write_node(&mut self, node: &mut Node) -> std::io::Result<()> {
+        let mut pg = self.allocate_empty_page();
+        if node.page_num == 0 {
+            pg.num = self.freelist.next_page();
+            node.page_num = pg.num;
+        } else {
+            pg.num = node.page_num;
+        }
+
+        // TODO: serialize node data.
+
+        self.write_page(&pg)?;
+        Ok(())
+    }
+
+    pub fn delete_node(&mut self, pgnum: PageNum) {
+        self.freelist.release_page(pgnum);
+    }
+
+    pub fn get_node(&mut self, pgnum: PageNum) -> std::io::Result<Node> {
+        let pg = self.read_page(pgnum)?;
+        let mut node = Node::new();
+        node.deserialize(&pg.data)?;
+        node.page_num = pgnum;
+
+        Ok(node)
     }
 }

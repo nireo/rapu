@@ -61,6 +61,24 @@ impl Node {
             self.items.push(Item::new(key, value));
         }
 
+        if is_leaf == 0 {
+            self.children.push(rdr.read_u64::<LittleEndian>()?);
+        }
+
         Ok(())
+    }
+
+    pub fn key_in_node(&self, key: &[u8]) -> std::io::Result<(bool, usize)> {
+        for (i, item) in self.items.iter().enumerate() {
+            if &*item.key == key {
+                return Ok((true, i))
+            }
+
+            if &*item.key > key {
+                return Ok((false, i))
+            }
+        }
+
+        Ok((false, self.items.len()))
     }
 }
