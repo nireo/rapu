@@ -57,6 +57,7 @@ impl Freelist {
             // we can unwrap, since we know that the lenght is more than 0
             self.released_pages.pop().unwrap()
         } else {
+            self.max_page += 1;
             self.max_page
         }
     }
