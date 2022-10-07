@@ -16,15 +16,20 @@ pub const PAGE_NUM_SIZE: usize = 8; // page number size in bytes
 #[derive(Clone)]
 pub struct Meta {
     pub freelist_page: PageNum,
+    pub root: PageNum,
 }
 
 impl Meta {
     pub fn new() -> Self {
-        Self { freelist_page: 0 }
+        Self {
+            freelist_page: 0,
+            root: 0,
+        }
     }
 
     pub fn serialize(&self) -> std::io::Result<Vec<u8>> {
         let mut vc = Vec::new();
+        vc.write_u64::<LittleEndian>(self.root)?;
         vc.write_u64::<LittleEndian>(self.freelist_page)?;
 
         Ok(vc)
@@ -32,6 +37,7 @@ impl Meta {
 
     pub fn deserialize(&mut self, vc: &[u8]) -> std::io::Result<()> {
         let mut rdr = Cursor::new(vc);
+        self.root = rdr.read_u64::<LittleEndian>()?;
         self.freelist_page = rdr.read_u64::<LittleEndian>()?;
 
         Ok(())
@@ -147,11 +153,11 @@ impl DataAccessLayer {
         }
     }
 
-    pub fn read_page(&mut self, page_num: PageNum) -> std::io::Result<Page> {
+    pub fn read_page(&self, page_num: PageNum) -> std::io::Result<Page> {
         let mut p = self.allocate_empty_page();
         let offset = (page_num as usize) * self.page_size;
 
-        let mut f = BufReader::new(&mut self.file);
+        let mut f = BufReader::new(&self.file);
         f.seek(SeekFrom::Start(offset as u64))?;
 
         f.take(self.page_size as u64).read_to_end(&mut p.data)?;
@@ -159,9 +165,9 @@ impl DataAccessLayer {
         Ok(p)
     }
 
-    pub fn write_page(&mut self, p: &Page) -> std::io::Result<()> {
+    pub fn write_page(&self, p: &Page) -> std::io::Result<()> {
         let offset = (p.num as usize) * self.page_size;
-        let mut f = BufWriter::new(&mut self.file);
+        let mut f = BufWriter::new(&self.file);
         f.seek(SeekFrom::Start(offset as u64))?;
         f.write_all(&p.data)?;
 
@@ -210,26 +216,23 @@ impl DataAccessLayer {
         Ok(freelist)
     }
 
-    pub fn write_node(&mut self, node: &mut Node) -> std::io::Result<()> {
+    pub fn write_node(&mut self, node: &Node) -> std::io::Result<PageNum> {
         let mut pg = self.allocate_empty_page();
         if node.page_num == 0 {
             pg.num = self.freelist.next_page();
-            node.page_num = pg.num;
         } else {
             pg.num = node.page_num;
         }
 
-        // TODO: serialize node data.
-
         self.write_page(&pg)?;
-        Ok(())
+        Ok(pg.num)
     }
 
     pub fn delete_node(&mut self, pgnum: PageNum) {
         self.freelist.release_page(pgnum);
     }
 
-    pub fn get_node(&mut self, pgnum: PageNum) -> std::io::Result<Node> {
+    pub fn get_node(&self, pgnum: PageNum) -> std::io::Result<Node> {
         let pg = self.read_page(pgnum)?;
         let mut node = Node::new();
         node.deserialize(&pg.data)?;

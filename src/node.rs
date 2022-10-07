@@ -2,6 +2,7 @@ use crate::dal::{ByteString, DataAccessLayer, PageNum, PAGE_NUM_SIZE};
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use std::io::Cursor;
 use std::io::Read;
+use std::io::{Error, ErrorKind};
 
 pub struct Item {
     pub key: ByteString,
@@ -9,7 +10,7 @@ pub struct Item {
 }
 
 pub struct Node {
-    pub dal: Option<DataAccessLayer>,
+    pub dal: Option<Box<DataAccessLayer>>,
     pub page_num: PageNum,
     pub items: Vec<Item>,
     pub children: Vec<PageNum>,
@@ -68,17 +69,46 @@ impl Node {
         Ok(())
     }
 
-    pub fn key_in_node(&self, key: &[u8]) -> std::io::Result<(bool, usize)> {
+    fn key_in_node(&self, key: &[u8]) -> (bool, usize) {
         for (i, item) in self.items.iter().enumerate() {
             if &*item.key == key {
-                return Ok((true, i))
+                return (true, i);
             }
 
             if &*item.key > key {
-                return Ok((false, i))
+                return (false, i);
             }
         }
 
-        Ok((false, self.items.len()))
+        (false, self.items.len())
+    }
+
+    fn find_key_helper(n: &Node, key: &[u8], dal: &DataAccessLayer) -> std::io::Result<(usize, Node)> {
+        let (found, idx) = n.key_in_node(key);
+        if found {}
+
+        if n.is_leaf() {
+            return Err(Error::new(ErrorKind::Other, "node is leaf."));
+        }
+
+        let next = dal.get_node(n.children[idx])?;
+        Node::find_key_helper(&next, key, dal)
+    }
+
+    pub fn find_key(&self, key: &[u8], dal: &DataAccessLayer) -> std::io::Result<()> {
+        Ok(())
+    }
+
+    pub fn element_size(&self, i: usize) -> usize {
+        self.items[i].key.len() + self.items[i].value.len() + PAGE_NUM_SIZE
+    }
+
+    pub fn size(&self) -> usize {
+        let mut size = 0;
+        size += 3;
+        for n in self.children.iter() {
+            size += self.element_size(n.to_owned() as usize);
+        }
+        size + PAGE_NUM_SIZE
     }
 }
