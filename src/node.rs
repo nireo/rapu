@@ -1,5 +1,5 @@
 use crate::dal::{ByteString, DataAccessLayer, PageNum, PAGE_NUM_SIZE};
-use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
+use byteorder::{ByteOrder, LittleEndian, ReadBytesExt, WriteBytesExt};
 use std::io::Cursor;
 use std::io::Read;
 use std::io::{Error, ErrorKind};
@@ -83,7 +83,11 @@ impl Node {
         (false, self.items.len())
     }
 
-    fn find_key_helper(n: &Node, key: &[u8], dal: &DataAccessLayer) -> std::io::Result<(usize, Node)> {
+    fn find_key_helper(
+        n: &Node,
+        key: &[u8],
+        dal: &DataAccessLayer,
+    ) -> std::io::Result<(usize, Node)> {
         let (found, idx) = n.key_in_node(key);
         if found {}
 
@@ -110,5 +114,61 @@ impl Node {
             size += self.element_size(n.to_owned() as usize);
         }
         size + PAGE_NUM_SIZE
+    }
+
+    pub fn serialize(&self, page_buffer: &mut [u8]) -> std::io::Result<()> {
+        let mut left_pos = 0;
+        let mut right_pos = page_buffer.len() - 1;
+
+        let mut bitsetvar: u8 = 0;
+        if self.is_leaf() {
+            bitsetvar = 1;
+        }
+        page_buffer[left_pos] = bitsetvar;
+        left_pos += 1;
+
+        LittleEndian::write_u16(
+            &mut page_buffer[left_pos..left_pos + 2],
+            self.items.len() as u16,
+        );
+        left_pos += 2;
+
+        for idx in 0..self.items.len() {
+            if !self.is_leaf() {
+                LittleEndian::write_u64(
+                    &mut page_buffer[left_pos..left_pos + PAGE_NUM_SIZE],
+                    self.children[idx],
+                );
+                left_pos += PAGE_NUM_SIZE;
+            }
+
+            let klen = self.items[idx].key.len();
+            let vlen = self.items[idx].value.len();
+
+            LittleEndian::write_u16(
+                &mut page_buffer[left_pos..left_pos + 2],
+                (right_pos - klen - vlen - 2) as u16,
+            );
+            left_pos += 2;
+
+            right_pos -= vlen;
+            page_buffer[right_pos..right_pos + vlen].clone_from_slice(&self.items[idx].value);
+            right_pos -= 1;
+            page_buffer[right_pos] = vlen as u8;
+
+            right_pos -= klen;
+            page_buffer[right_pos..right_pos + klen].clone_from_slice(&self.items[idx].key);
+            right_pos -= 1;
+            page_buffer[right_pos] = klen as u8;
+        }
+
+        if self.is_leaf() {
+            LittleEndian::write_u64(
+                &mut page_buffer[left_pos..left_pos + PAGE_NUM_SIZE],
+                *self.children.last().unwrap(),
+            );
+        }
+
+        Ok(())
     }
 }

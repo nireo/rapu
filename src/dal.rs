@@ -98,6 +98,22 @@ impl Freelist {
     }
 }
 
+pub struct DataAccessLayerConfig {
+    page_size: usize,
+    min_fill_percent: f32,
+    max_fill_percent: f32,
+}
+
+impl DataAccessLayerConfig {
+    pub fn default() -> Self {
+        Self {
+            page_size: 4096,
+            min_fill_percent: 0.5,
+            max_fill_percent: 0.95,
+        }
+    }
+}
+
 pub struct Page {
     pub num: PageNum,
     pub data: ByteString,
@@ -108,16 +124,20 @@ pub struct DataAccessLayer {
     pub page_size: usize,
     pub freelist: Freelist,
     pub meta: Meta,
+    pub min_fill_percent: f32,
+    pub max_fill_percent: f32,
 }
 
 impl DataAccessLayer {
-    pub fn new(path: &Path, page_size: usize) -> std::io::Result<Self> {
+    pub fn new(path: &Path, options: &DataAccessLayerConfig) -> std::io::Result<Self> {
         if path.exists() {
             let file = OpenOptions::new().read(true).write(true).open(path)?;
 
             let mut dal = Self {
                 file,
-                page_size,
+                page_size: options.page_size,
+                min_fill_percent: options.min_fill_percent,
+                max_fill_percent: options.max_fill_percent,
                 freelist: Freelist::new(),
                 meta: Meta::new(),
             };
@@ -223,6 +243,7 @@ impl DataAccessLayer {
         } else {
             pg.num = node.page_num;
         }
+        node.serialize(&mut pg.data)?;
 
         self.write_page(&pg)?;
         Ok(pg.num)
