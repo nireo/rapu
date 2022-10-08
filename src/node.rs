@@ -3,6 +3,8 @@ use byteorder::{ByteOrder, LittleEndian, ReadBytesExt, WriteBytesExt};
 use std::io::Cursor;
 use std::io::Read;
 use std::io::{Error, ErrorKind};
+use std::rc::Rc;
+use std::cell::RefCell;
 
 #[derive(Clone)]
 pub struct Item {
@@ -95,7 +97,7 @@ impl Node {
         }
 
         if n.is_leaf() {
-            return Err(Error::new(ErrorKind::Other, "node is leaf."));
+            return Ok((idx, n.to_owned()))
         }
 
         ancestor_idxs.push(idx);
