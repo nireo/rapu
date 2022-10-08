@@ -10,8 +10,8 @@ pub struct Item {
     pub value: ByteString,
 }
 
+#[derive(Clone)]
 pub struct Node {
-    pub dal: Option<Box<DataAccessLayer>>,
     pub page_num: PageNum,
     pub items: Vec<Item>,
     pub children: Vec<PageNum>,
@@ -26,7 +26,6 @@ impl Item {
 impl Node {
     pub fn new() -> Self {
         Self {
-            dal: None,
             page_num: 0,
             items: Vec::new(),
             children: Vec::new(),
@@ -88,20 +87,32 @@ impl Node {
         n: &Node,
         key: &[u8],
         dal: &DataAccessLayer,
+        ancestor_idxs: &mut Vec<usize>,
     ) -> std::io::Result<(usize, Node)> {
         let (found, idx) = n.key_in_node(key);
-        if found {}
+        if found {
+            return Ok((idx, n.to_owned()));
+        }
 
         if n.is_leaf() {
             return Err(Error::new(ErrorKind::Other, "node is leaf."));
         }
 
+        ancestor_idxs.push(idx);
         let next = dal.get_node(n.children[idx])?;
-        Node::find_key_helper(&next, key, dal)
+        Node::find_key_helper(&next, key, dal, ancestor_idxs)
     }
 
-    pub fn find_key(&self, key: &[u8], dal: &DataAccessLayer) -> std::io::Result<()> {
-        Ok(())
+    pub fn find_key(
+        &self,
+        key: &[u8],
+        dal: &DataAccessLayer,
+    ) -> std::io::Result<(usize, Node, Vec<usize>)> {
+        let mut ancestor_idxs = vec![0usize];
+        match Node::find_key_helper(self, key, dal, &mut ancestor_idxs) {
+            Ok((idx, node)) => Ok((idx, node, ancestor_idxs)),
+            Err(e) => Err(e),
+        }
     }
 
     pub fn element_size(&self, i: usize) -> usize {
