@@ -1,18 +1,18 @@
 use crate::dal::{ByteString, DataAccessLayer, PageNum, PAGE_NUM_SIZE};
 use byteorder::{ByteOrder, LittleEndian, ReadBytesExt, WriteBytesExt};
+use std::cell::RefCell;
 use std::io::Cursor;
 use std::io::Read;
 use std::io::{Error, ErrorKind};
 use std::rc::Rc;
-use std::cell::RefCell;
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct Item {
     pub key: ByteString,
     pub value: ByteString,
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct Node {
     pub page_num: PageNum,
     pub items: Vec<Item>,
@@ -97,7 +97,7 @@ impl Node {
         }
 
         if n.is_leaf() {
-            return Ok((idx, n.to_owned()))
+            return Ok((idx, n.to_owned()));
         }
 
         ancestor_idxs.push(idx);
@@ -124,8 +124,8 @@ impl Node {
     pub fn size(&self) -> usize {
         let mut size = 0;
         size += 3;
-        for n in self.children.iter() {
-            size += self.element_size(n.to_owned() as usize);
+        for n in 0..self.items.len() {
+            size += self.element_size(n);
         }
         size + PAGE_NUM_SIZE
     }
@@ -176,7 +176,7 @@ impl Node {
             page_buffer[right_pos] = klen as u8;
         }
 
-        if self.is_leaf() {
+        if !self.is_leaf() {
             LittleEndian::write_u64(
                 &mut page_buffer[left_pos..left_pos + PAGE_NUM_SIZE],
                 *self.children.last().unwrap(),
@@ -215,20 +215,20 @@ impl Node {
         let split_idx = dal.get_split_index(to_split)?;
         let middle_item = to_split.items[split_idx].clone();
 
-        let node = if to_split.is_leaf() {
+        let mut node = if to_split.is_leaf() {
             let mut new_node = dal.new_node(to_split.items[(split_idx + 1)..].to_vec(), Vec::new());
             new_node.write_node(dal)?;
             to_split.items.truncate(split_idx);
 
             new_node
         } else {
-            let mut new_node = dal.new_node(
+            let new_node = dal.new_node(
                 to_split.items[(split_idx + 1)..].to_vec(),
                 to_split.children[(split_idx + 1)..].to_vec(),
             );
             to_split.items.truncate(split_idx);
             to_split.children.truncate(split_idx);
-            Node::new()
+            new_node
         };
         self.add_item(middle_item, n_to_split_idx);
 

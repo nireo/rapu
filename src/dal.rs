@@ -101,9 +101,9 @@ impl Freelist {
 }
 
 pub struct DataAccessLayerConfig {
-    page_size: usize,
-    min_fill_percent: f32,
-    max_fill_percent: f32,
+    pub page_size: usize,
+    pub min_fill_percent: f32,
+    pub max_fill_percent: f32,
 }
 
 impl DataAccessLayerConfig {
@@ -156,7 +156,9 @@ impl DataAccessLayer {
 
             let mut dal = Self {
                 file,
-                page_size,
+                page_size: options.page_size,
+                min_fill_percent: options.min_fill_percent,
+                max_fill_percent: options.max_fill_percent,
                 freelist: Freelist::new(),
                 meta: Meta::new(),
             };
@@ -294,7 +296,7 @@ impl DataAccessLayer {
         Err(Error::new(ErrorKind::Other, "not big enough page sizes"))
     }
 
-    pub fn new_node(&self, items: Vec<Item>, children: Vec<PageNum>) -> Node {
+    pub fn new_node(&mut self, items: Vec<Item>, children: Vec<PageNum>) -> Node {
         let mut node = Node::new();
 
         node.items = items;
