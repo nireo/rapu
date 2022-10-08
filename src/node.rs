@@ -4,6 +4,7 @@ use std::io::Cursor;
 use std::io::Read;
 use std::io::{Error, ErrorKind};
 
+#[derive(Clone)]
 pub struct Item {
     pub key: ByteString,
     pub value: ByteString,
@@ -168,6 +169,70 @@ impl Node {
                 *self.children.last().unwrap(),
             );
         }
+
+        Ok(())
+    }
+
+    pub fn add_item(&mut self, item: Item, insertion_idx: usize) -> usize {
+        if self.items.len() == insertion_idx {
+            self.items.push(item);
+            return insertion_idx;
+        }
+
+        self.items[insertion_idx] = item;
+        insertion_idx
+    }
+
+    pub fn write_node(&mut self, dal: &mut DataAccessLayer) -> std::io::Result<()> {
+        let pgnum = dal.write_node(self)?;
+        if self.page_num == 0 {
+            self.page_num = pgnum;
+        }
+
+        Ok(())
+    }
+
+    // TODO: make this a bit smarter sometime for now it just works.
+    pub fn split(
+        &mut self,
+        to_split: &mut Node,
+        n_to_split_idx: usize,
+        dal: &mut DataAccessLayer,
+    ) -> std::io::Result<()> {
+        let split_idx = dal.get_split_index(to_split)?;
+        let middle_item = to_split.items[split_idx].clone();
+
+        let node = if to_split.is_leaf() {
+            let mut new_node = dal.new_node(to_split.items[(split_idx + 1)..].to_vec(), Vec::new());
+            new_node.write_node(dal)?;
+            to_split.items.truncate(split_idx);
+
+            new_node
+        } else {
+            let mut new_node = dal.new_node(
+                to_split.items[(split_idx + 1)..].to_vec(),
+                to_split.children[(split_idx + 1)..].to_vec(),
+            );
+            to_split.items.truncate(split_idx);
+            to_split.children.truncate(split_idx);
+            Node::new()
+        };
+        self.add_item(middle_item, n_to_split_idx);
+
+        if self.children.len() == n_to_split_idx + 1 {
+            self.children.push(node.page_num);
+        } else {
+            // we basically need to flip the vector around. this could probably be done in
+            // a smarter way :D.
+            let mut new_vec = self.children[..(n_to_split_idx + 1)].to_vec();
+            new_vec.push(node.page_num);
+            new_vec.extend_from_slice(&self.children[n_to_split_idx..]);
+
+            self.children = new_vec;
+        }
+
+        self.write_node(dal)?;
+        node.write_node(dal)?;
 
         Ok(())
     }

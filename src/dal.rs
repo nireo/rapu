@@ -1,10 +1,11 @@
-use crate::node::Node;
+use crate::node::{Item, Node};
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use std::fs::{File, OpenOptions};
 use std::io::prelude::*;
 use std::io::Cursor;
 use std::io::SeekFrom;
 use std::io::{BufReader, BufWriter};
+use std::io::{Error, ErrorKind};
 use std::path::Path;
 
 pub type PageNum = u64;
@@ -12,6 +13,7 @@ pub type ByteString = Vec<u8>;
 
 const META_PAGE_NUM: PageNum = 0;
 pub const PAGE_NUM_SIZE: usize = 8; // page number size in bytes
+pub const NODE_HEADER_SIZE: usize = 3;
 
 #[derive(Clone)]
 pub struct Meta {
@@ -260,5 +262,45 @@ impl DataAccessLayer {
         node.page_num = pgnum;
 
         Ok(node)
+    }
+
+    pub fn max_threshold(&self) -> f32 {
+        self.max_fill_percent * self.page_size as f32
+    }
+
+    pub fn is_over_populated(&self, n: &Node) -> bool {
+        n.size() as f32 > self.max_threshold()
+    }
+
+    pub fn min_threshold(&self) -> f32 {
+        self.min_fill_percent * self.page_size as f32
+    }
+
+    pub fn is_under_populated(&self, n: &Node) -> bool {
+        (n.size() as f32) < self.min_threshold()
+    }
+
+    pub fn get_split_index(&self, node: &Node) -> std::io::Result<usize> {
+        let mut size = 0;
+        size += NODE_HEADER_SIZE;
+
+        for idx in 0..node.items.len() {
+            size += node.element_size(idx);
+            if (size as f32) > self.min_threshold() && idx < node.items.len() - 1 {
+                return Ok(idx + 1);
+            }
+        }
+
+        Err(Error::new(ErrorKind::Other, "not big enough page sizes"))
+    }
+
+    pub fn new_node(&self, items: Vec<Item>, children: Vec<PageNum>) -> Node {
+        let mut node = Node::new();
+
+        node.items = items;
+        node.children = children;
+        node.page_num = self.freelist.next_page();
+
+        node
     }
 }
