@@ -224,7 +224,7 @@ impl DataAccessLayer {
         let buf = self.freelist.serialize()?;
 
         for i in 0..buf.len() {
-            pg.data[i] = buf[i].clone();
+            pg.data[i] = buf[i];
         }
         self.write_page(&pg)?;
         self.meta.freelist_page = pg.num;

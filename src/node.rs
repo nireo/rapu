@@ -97,7 +97,7 @@ impl Node {
         }
 
         if n.is_leaf() {
-            return Ok((idx, n.to_owned()));
+            return Err(Error::new(ErrorKind::Other, "not found"))
         }
 
         ancestor_idxs.push(idx);
