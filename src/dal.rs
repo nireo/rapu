@@ -163,6 +163,8 @@ impl DataAccessLayer {
                 meta: Meta::new(),
             };
             dal.meta.freelist_page = dal.freelist.next_page();
+            dal.write_freelist()?;
+
             let meta_clone = dal.meta.clone();
             dal.write_meta(&meta_clone)?;
 

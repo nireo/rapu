@@ -93,7 +93,7 @@ impl Node {
     ) -> std::io::Result<(usize, Node)> {
         let (found, idx) = n.key_in_node(key);
         if found {
-            return Ok((idx, n.to_owned()));
+            return Ok((idx, n.clone()));
         }
 
         if n.is_leaf() {
