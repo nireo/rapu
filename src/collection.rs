@@ -45,16 +45,23 @@ impl<'a> Collection<'a> {
             let mut node = self.dal.new_node(vec![item.clone()], Vec::new());
             node.write_node(&mut self.dal)?;
             self.root_page = node.page_num;
+            println!("{:#?}", node);
 
             node
         } else {
+            println!("getting node from dal");
             self.dal.get_node(self.root_page)?
         };
 
-        let (idx, mut node, ancestors) = root_node.find_key(key, &self.dal)?;
-        // TODO: check if already exists
+        println!("{:#?}", root_node);
 
-        node.add_item(item, idx);
+        let (idx, mut node, ancestors) = root_node.find_key(key, &self.dal)?;
+        if idx < node.items.len() && node.items[idx].key == key {
+            node.items[idx] = item
+        } else {
+            node.add_item(item, idx);
+        }
+
         node.write_node(&mut self.dal)?;
 
         // rebalance

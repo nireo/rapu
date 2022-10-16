@@ -97,7 +97,7 @@ impl Node {
         }
 
         if n.is_leaf() {
-            return Err(Error::new(ErrorKind::Other, "not found"))
+            return Err(Error::new(ErrorKind::Other, "not found"));
         }
 
         ancestor_idxs.push(idx);
@@ -197,11 +197,7 @@ impl Node {
     }
 
     pub fn write_node(&mut self, dal: &mut DataAccessLayer) -> std::io::Result<()> {
-        let pgnum = dal.write_node(self)?;
-        if self.page_num == 0 {
-            self.page_num = pgnum;
-        }
-
+        dal.write_node(self)?;
         Ok(())
     }
 

@@ -15,7 +15,7 @@ const META_PAGE_NUM: PageNum = 0;
 pub const PAGE_NUM_SIZE: usize = 8; // page number size in bytes
 pub const NODE_HEADER_SIZE: usize = 3;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Meta {
     pub freelist_page: PageNum,
     pub root: PageNum,
@@ -46,6 +46,7 @@ impl Meta {
     }
 }
 
+#[derive(Debug)]
 pub struct Freelist {
     max_page: PageNum,
 
@@ -165,6 +166,13 @@ impl DataAccessLayer {
             dal.meta.freelist_page = dal.freelist.next_page();
             dal.write_freelist()?;
 
+            // init root
+            let mut collection_node = Node::new();
+            collection_node.write_node(&mut dal)?;
+            dal.meta.root = collection_node.page_num;
+            println!("{:#?}", dal.meta);
+
+            // write meta page
             let meta_clone = dal.meta.clone();
             dal.write_meta(&meta_clone)?;
 
@@ -242,10 +250,11 @@ impl DataAccessLayer {
         Ok(freelist)
     }
 
-    pub fn write_node(&mut self, node: &Node) -> std::io::Result<PageNum> {
+    pub fn write_node(&mut self, node: &mut Node) -> std::io::Result<PageNum> {
         let mut pg = self.allocate_empty_page();
         if node.page_num == 0 {
             pg.num = self.freelist.next_page();
+            node.page_num = pg.num;
         } else {
             pg.num = node.page_num;
         }
